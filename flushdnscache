@@ -2,6 +2,9 @@
 
 set -e
 
+CONTRIBUTION_URL="https://github.com/dwb/flushdnscache"
+BUG_REPORT_URL="https://github.com/dwb/flushdnscache/issues/new"
+
 if command -v sudo >/dev/null; then
   SUDO="sudo --"
 else
@@ -19,8 +22,7 @@ unknown_version() {
 }
 
 die_contribute() {
-  # TODO: contributing URL
-  die "Please consider contributing to this project at https://example.com"
+  die "Please consider contributing to this project at ${CONTRIBUTION_URL}"
 }
 
 at_exit() {
@@ -28,8 +30,7 @@ at_exit() {
     exit_trace=""
     [ -n $2 ] && exit_trace=" at line $2"
     echo "$0: error${exit_trace}"
-    # TODO: reporting URL
-    echo "Please report a bug!"
+    echo "Please report a bug at ${BUG_REPORT_URL}"
   fi
 }
 
