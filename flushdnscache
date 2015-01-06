@@ -5,7 +5,7 @@ set -e
 CONTRIBUTION_URL="https://github.com/dwb/flushdnscache"
 BUG_REPORT_URL="https://github.com/dwb/flushdnscache/issues/new"
 
-if command -v sudo >/dev/null; then
+if [ "`id -u`" != "0" ] && command -v sudo >/dev/null; then
   SUDO="sudo --"
 else
   SUDO=""
