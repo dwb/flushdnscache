@@ -1,0 +1,155 @@
+#!/bin/sh
+
+set -e
+
+if command -v sudo >/dev/null; then
+  SUDO="sudo --"
+else
+  SUDO=""
+fi
+
+die() {
+  echo "$@"
+  exit 1
+}
+
+unknown_version() {
+  echo "Unknown $1 version: $2"
+  die_contribute
+}
+
+die_contribute() {
+  # TODO: contributing URL
+  die "Please consider contributing to this project at https://example.com"
+}
+
+at_exit() {
+  if [ $1 -ne 0 ]; then
+    exit_trace=""
+    [ -n $2 ] && exit_trace=" at line $2"
+    echo "$0: error${exit_trace}"
+    # TODO: reporting URL
+    echo "Please report a bug!"
+  fi
+}
+
+version_gte() {
+  # Slightly adapted from http://stackoverflow.com/a/4024038
+
+  [ "$1" == "$2" ] && return 0
+
+  ver1front=`echo $1 | cut -d "." -f -1`
+  ver1back=`echo $1 | cut -d "." -f 2-`
+
+  ver2front=`echo $2 | cut -d "." -f -1`
+  ver2back=`echo $2 | cut -d "." -f 2-`
+
+  if [ "$ver1front" != "$1" ] || [ "$ver2front" != "$2" ]; then
+    [ "$ver1front" -gt "$ver2front" ] && return 0
+    [ "$ver1front" -lt "$ver2front" ] && return 1
+
+    [ "$ver1front" == "$1" ] || [ -z "$ver1back" ] && ver1back=0
+    [ "$ver2front" == "$2" ] || [ -z "$ver2back" ] && ver2back=0
+    version_gte "$ver1back" "$ver2back"
+    return $?
+  else
+    [ "$1" -gt "$2" ]
+    return $?
+  fi
+}
+
+ps_named() {
+  ps -eo comm= | grep -qw "$1"
+  return $?
+}
+
+linux_restart_service() {
+  service_cmd=restart
+  [ -n "$2" ] && service_cmd="$2"
+
+  if command -v systemctl >/dev/null; then
+    $SUDO systemctl $service_cmd "$1"
+  elif command -v service >/dev/null; then
+    $SUDO service "$1" "$2"
+  elif [ -x "/etc/init.d/$1" ]; then
+    $SUDO "/etc/init.d/$1" "$2"
+  fi
+}
+
+trap 'at_exit $? $LINENO' EXIT
+
+case `uname | tr A-Z a-z` in
+  darwin)
+    # FIXME: grep -o is non-POSIX
+    osx_ver=`sw_vers -productVersion | grep -o '^\d\+\.\d\+'`
+    case $osx_ver in
+      10.10)
+        # Source: http://osxdaily.com/2008/03/21/how-to-flush-your-dns-cache-in-mac-os-x/
+        $SUDO discoveryutil mdnsflushcache
+        $SUDO discoveryutil udnsflushcaches
+        ;;
+      10.9)
+        # Source: http://osxdaily.com/2008/03/21/how-to-flush-your-dns-cache-in-mac-os-x/
+        $SUDO dscacheutil -flushcache
+        $SUDO killall -HUP mDNSResponder
+        ;;
+      10.8)
+        # Source: http://support.apple.com/en-gb/HT202516
+        $SUDO killall -HUP mDNSResponder
+        ;;
+      10.7)
+        # Source: http://support.apple.com/en-gb/HT202516
+        $SUDO killall -HUP mDNSResponder
+        ;;
+      10.6)
+        # Source: http://www.mymacosx.com/tricks-and-tips/clear-dns-cache-leopard.html
+        # Another source: http://support.apple.com/en-gb/HT202516
+        $SUDO dscacheutil -flushcache
+        ;;
+      10.5)
+        # Source: http://www.mymacosx.com/tricks-and-tips/clear-dns-cache-leopard.html
+        $SUDO dscacheutil -flushcache
+        ;;
+      10.4)
+        # Source: http://osxdaily.com/2008/03/21/how-to-flush-your-dns-cache-in-mac-os-x/
+        $SUDO lookupd -flushcache
+        ;;
+      10.3)
+        # Source: http://osxdaily.com/2008/03/21/how-to-flush-your-dns-cache-in-mac-os-x/
+        $SUDO lookupd -flushcache
+        ;;
+      *)
+        unknown_version "OS X" $osx_ver
+        ;;
+    esac
+    ;;
+  linux)
+    if ps_named named; then
+      if command -v rndc >/dev/null; then
+        # Source: http://archive.oreilly.com/pub/a/network/excerpt/dnsbindcook_ch05/?page=2
+        # FIXME: grep -wo are both non-POSIX
+        if version_gte `named -v | grep -wo '\d\+\.\d\+\.\d\+'` 9.2.0; then
+          $SUDO rndc flush
+        else
+          $SUDO rndc restart
+        fi
+      else
+        linux_restart_service named
+      fi
+
+    elif ps_named nscd; then
+      $SUDO nscd -i hosts
+
+    elif ps_named dnsmasq; then
+      linux_restart_service dnsmasq reload
+
+    else
+      echo "No supported Linux DNS cache found"
+      die_contribute
+    fi
+    ;;
+
+  *)
+    echo "Only OS X and Linux are supported at the moment"
+    die_contribute
+esac
